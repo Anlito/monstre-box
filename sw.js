@@ -1,6 +1,6 @@
 /* Service de l'appli : garde les fichiers en mémoire pour marcher sans réseau.
    Réseau d'abord (pour recevoir les mises à jour), mémoire si pas de réseau. */
-const CACHE = "monstre-box-v4";
+const CACHE = "monstre-box-v5";
 const FICHIERS = ["./", "index.html", "manifest.webmanifest", "icone-192.png", "icone-512.png", "icone-maskable-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {

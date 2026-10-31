@@ -38,7 +38,7 @@
     transition: transform .06s;
   }
   .pad button .emoji { font-size: 38px; line-height: 1; }
-  .pad button:active, .pad button.joue { transform: translateY(3px); box-shadow: 0 1px 0 #0b0611; background: linear-gradient(160deg, #6a2f8a, #3b1f4f); }
+  .pad button.joue { transform: translateY(3px); box-shadow: 0 1px 0 #0b0611; background: linear-gradient(160deg, #6a2f8a, #3b1f4f); }
 
   #installation { margin: 0 0 14px; text-align: center; }
   #installer { width: 100%; border: 2px solid #7dff6b; border-radius: 16px; padding: 12px; background: #1d3318; color: #e9ffe4; font-size: 17px; font-weight: 700; cursor: pointer; }
@@ -472,8 +472,9 @@ for (const [cle, emoji, nom] of pad) {
   const b = document.createElement("button");
   b.type = "button";
   b.innerHTML = `<span class="emoji" aria-hidden="true">${emoji}</span><span>${nom}</span>`;
-  b.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
+  // « click » et non « pointerdown » : le téléphone n'envoie pas de click quand le doigt glisse
+  // pour faire défiler la page, donc faire défiler ne joue plus de son.
+  b.addEventListener("click", () => {
     audio();
     sons[cle](ctx.currentTime + 0.02);
     b.classList.add("joue"); setTimeout(() => b.classList.remove("joue"), 150);
