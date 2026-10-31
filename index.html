@@ -40,6 +40,9 @@
   .pad button .emoji { font-size: 38px; line-height: 1; }
   .pad button:active, .pad button.joue { transform: translateY(3px); box-shadow: 0 1px 0 #0b0611; background: linear-gradient(160deg, #6a2f8a, #3b1f4f); }
 
+  #installation { margin: 0 0 14px; text-align: center; }
+  #installer { width: 100%; border: 2px solid #7dff6b; border-radius: 16px; padding: 12px; background: #1d3318; color: #e9ffe4; font-size: 17px; font-weight: 700; cursor: pointer; }
+  #aide-installation { margin: 6px 0 0; font-size: 14px; color: #c8b5dd; }
   .bas { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
   #stop { flex: 0 0 auto; border: 0; border-radius: 14px; padding: 14px 16px; background: #3a3a46; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
   .volume { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -50,6 +53,10 @@
 
 <h1>🎃 Monstre Box</h1>
 <p class="astuce">Connecte ton enceinte Bluetooth au téléphone, puis appuie !</p>
+<div id="installation" hidden>
+  <button id="installer" type="button" hidden>📲 Installer l'appli sur le téléphone</button>
+  <p id="aide-installation"></p>
+</div>
 
 <button id="micro" type="button" aria-pressed="false">
   <span class="emoji">🎤</span><span id="micro-texte">Voix de monstre : ARRÊT</span>
@@ -587,9 +594,45 @@ function arreterMicro() {
 }
 
 /* ===================== Mode application ===================== */
-if ("serviceWorker" in navigator && location.protocol === "https:") {
+if ("serviceWorker" in navigator && window.isSecureContext && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
+
+const dejaInstallee = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const zoneInstallation = document.getElementById("installation");
+const boutonInstaller = document.getElementById("installer");
+const aideInstallation = document.getElementById("aide-installation");
+let demandeInstallation = null;
+
+if (!dejaInstallee) {
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+    zoneInstallation.hidden = false;
+    aideInstallation.textContent = "Pour l'installer sur iPhone : ouvre cette page dans Safari, touche le bouton Partager (carré avec une flèche ⬆️), puis « Sur l'écran d'accueil ».";
+  } else {
+    // si Chrome ne propose pas l'installation au bout de 4 s, on explique quoi faire
+    setTimeout(() => {
+      if (demandeInstallation) return;
+      zoneInstallation.hidden = false;
+      aideInstallation.textContent = "Pour l'installer : ouvre l'adresse anlito.github.io/monstre-box directement dans l'appli Chrome (pas depuis un lien dans une autre appli), puis menu ⋮ → « Installer l'application » ou « Ajouter à l'écran d'accueil ».";
+    }, 4000);
+  }
+}
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  demandeInstallation = e;
+  zoneInstallation.hidden = false;
+  boutonInstaller.hidden = false;
+  aideInstallation.textContent = "";
+});
+boutonInstaller.addEventListener("click", async () => {
+  if (!demandeInstallation) return;
+  demandeInstallation.prompt();
+  const choix = await demandeInstallation.userChoice.catch(() => null);
+  demandeInstallation = null;
+  boutonInstaller.hidden = true;
+  if (choix && choix.outcome === "accepted") aideInstallation.textContent = "C'est installé : cherche la citrouille sur ton écran d'accueil 🎃";
+});
+window.addEventListener("appinstalled", () => { zoneInstallation.hidden = true; });
 </script>
 </body>
 </html>
