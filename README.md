@@ -1,6 +1,6 @@
 # 🎃 Monstre Box
 
-Application web pour smartphone (installable depuis Chrome) : un pad de 15 bruitages d'Halloween et un bouton « voix de monstre »
+Application web pour smartphone (installable depuis Chrome) : un pad de 18 bruitages d'Halloween et un bouton « voix de monstre »
 (un appui allume le micro, un deuxième l'éteint). Les sons sont fabriqués par la page (Web Audio),
 aucun fichier son, rien n'est envoyé nulle part.
 
