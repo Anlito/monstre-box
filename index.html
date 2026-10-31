@@ -23,6 +23,14 @@
     display: flex; align-items: center; justify-content: center; gap: 12px;
   }
   #micro .emoji { font-size: 40px; }
+  #ambiance {
+    width: 100%; border: 2px solid #9b6bff; border-radius: 18px; padding: 12px; margin: 0 0 6px;
+    background: #1f1533; color: #f3e9ff; font-size: 18px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  #ambiance .emoji { font-size: 28px; }
+  #ambiance.actif { background: #9b6bff; color: #12052a; animation: pulse 3s ease-in-out infinite; }
+  .volume-ambiance { margin: 0 4px 16px; color: #c8b5dd; }
   #micro.actif { background: #ff8a1f; color: #1a0d00; animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 10px rgba(255,138,31,.25); } }
   #niveau { height: 8px; border-radius: 4px; background: #2a1636; margin: 8px 4px 0; overflow: hidden; }
@@ -63,6 +71,11 @@
 </button>
 <div id="niveau" aria-hidden="true"><div></div></div>
 <p id="message" role="status"></p>
+
+<button id="ambiance" type="button" aria-pressed="false">
+  <span class="emoji" aria-hidden="true">🌫️</span><span id="ambiance-texte">Ambiance angoissante : ARRÊT</span>
+</button>
+<label class="volume volume-ambiance">Volume ambiance <input id="volume-ambiance" type="range" min="0" max="1.5" step="0.05" value="0.8"></label>
 
 <div class="pad" id="pad"></div>
 
@@ -485,6 +498,98 @@ for (const [cle, emoji, nom] of pad) {
 document.getElementById("stop").addEventListener("click", () => { if (ctx) nouveauBus(); });
 document.getElementById("volume").addEventListener("input", (e) => {
   if (sortie) sortie.gain.setTargetAtTime(Number(e.target.value), ctx.currentTime, 0.03);
+});
+
+/* ===================== Ambiance angoissante (sans fin) ===================== */
+/* Fabriquée en direct : nappes continues + bruits lointains tirés au hasard.
+   Elle tourne tant qu'elle est allumée et ne se répète jamais à l'identique. */
+let ambiance = null;
+const boutonAmbiance = document.getElementById("ambiance");
+const texteAmbiance = document.getElementById("ambiance-texte");
+const volumeAmbiance = document.getElementById("volume-ambiance");
+
+const evenementsAmbiance = [   // [son, poids] : plus le poids est grand, plus il revient souvent
+  ["porte", 3], ["chuchote", 3], ["pas", 3], ["coups", 2], ["chaines", 2], ["coeur", 2],
+  ["respiration", 2], ["loup", 2], ["tonnerre", 1], ["rire", 1], ["cordes", 1], ["cri", 0.5], ["approche", 0.5],
+];
+
+function lfo(cible, vitesse, profondeur, t) {
+  const l = osc("sine", vitesse), g = gain(profondeur);
+  l.connect(g); g.connect(cible); l.start(t);
+  return l;
+}
+
+function demarrerAmbiance() {
+  audio();
+  const t = ctx.currentTime + 0.05, sources = [];
+  const bus = gain(0);
+  bus.gain.setValueAtTime(0, t);
+  bus.gain.linearRampToValueAtTime(Number(volumeAmbiance.value), t + 4);   // arrive doucement
+  bus.connect(sortie);
+  bus.envoiReverb = gain(1); bus.envoiReverb.connect(reverb);
+
+  // 1. grondement grave dissonant, filtre qui respire lentement
+  const lp = filtre("lowpass", 350, 4), gd = gain(0.22);
+  sources.push(lfo(lp.frequency, 0.025, 220, t));
+  [55, 58.3, 82.4, 116.5].forEach((f, i) => {
+    const o = osc(i < 2 ? "sawtooth" : "triangle", f);
+    sources.push(lfo(o.frequency, 0.05 + i * 0.02, 0.6, t));                // battements qui dérivent
+    o.connect(lp); o.start(t); sources.push(o);
+  });
+  lp.connect(gd); gd.connect(bus);
+  const rd = gain(0.15); gd.connect(rd); rd.connect(bus.envoiReverb);
+
+  // 2. vent qui monte et redescend
+  const v = bruit(), vf = filtre("bandpass", 500, 4), vg = gain(0.5);
+  sources.push(lfo(vf.frequency, 0.06, 300, t), lfo(vg.gain, 0.045, 0.35, t));
+  v.connect(vf); vf.connect(vg); vg.connect(bus); v.start(t); sources.push(v);
+
+  // 3. sifflement aigu lointain qui apparaît et disparaît
+  const s = osc("sine", 1760), sg = gain(0);
+  sources.push(lfo(s.frequency, 0.2, 6, t), lfo(sg.gain, 0.03, 0.025, t));
+  s.connect(sg); sg.connect(bus.envoiReverb); s.start(t); sources.push(s);
+
+  // 4. bruits lointains au hasard (plus faibles, plus de réverbération)
+  const loin = gain(0.35); loin.connect(bus);
+  loin.envoiReverb = gain(1.6); loin.envoiReverb.connect(bus.envoiReverb);
+  const total = evenementsAmbiance.reduce((a, [, p]) => a + p, 0);
+  let dernier = null;
+  function prochainEvenement() {
+    if (!ambiance) return;
+    let x = Math.random() * total, nom = evenementsAmbiance[0][0];
+    for (const [n, p] of evenementsAmbiance) { if ((x -= p) <= 0) { nom = n; break; } }
+    if (nom === dernier) nom = "porte" === nom ? "pas" : "porte";               // pas deux fois le même
+    dernier = nom;
+    const ancien = busSons; busSons = loin;                                      // le son part vers l'ambiance
+    try { sons[nom](ctx.currentTime + 0.05); } finally { busSons = ancien; }
+    ambiance.minuterie = setTimeout(prochainEvenement, 7000 + Math.random() * 12000);
+  }
+
+  ambiance = { bus, sources, minuterie: setTimeout(prochainEvenement, 5000), verrou: null };
+  navigator.wakeLock?.request("screen").then((v) => { if (ambiance) ambiance.verrou = v; }).catch(() => {});
+  boutonAmbiance.classList.add("actif");
+  boutonAmbiance.setAttribute("aria-pressed", "true");
+  texteAmbiance.textContent = "Ambiance angoissante : MARCHE";
+}
+
+function arreterAmbiance() {
+  if (!ambiance) return;
+  const a = ambiance; ambiance = null;
+  clearTimeout(a.minuterie);
+  const t = ctx.currentTime;
+  a.bus.gain.cancelScheduledValues(t);
+  a.bus.gain.setValueAtTime(a.bus.gain.value, t);
+  a.bus.gain.linearRampToValueAtTime(0, t + 1.5);                              // s'éteint doucement
+  setTimeout(() => { a.sources.forEach((x) => { try { x.stop(); } catch (e) {} }); a.bus.disconnect(); }, 1700);
+  if (a.verrou) a.verrou.release().catch(() => {});
+  boutonAmbiance.classList.remove("actif");
+  boutonAmbiance.setAttribute("aria-pressed", "false");
+  texteAmbiance.textContent = "Ambiance angoissante : ARRÊT";
+}
+
+boutonAmbiance.addEventListener("click", () => { ambiance ? arreterAmbiance() : demarrerAmbiance(); });
+volumeAmbiance.addEventListener("input", () => {
+  if (ambiance) ambiance.bus.gain.setTargetAtTime(Number(volumeAmbiance.value), ctx.currentTime, 0.1);
 });
 
 /* ===================== Voix de monstre ===================== */
