@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#120a1c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icone-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Monstre Box">
 <title>Monstre Box – Halloween</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -138,7 +143,221 @@ function distorsion(k) {
 }
 
 /* ===================== Les sons ===================== */
+/* bruit filtré et lissé : sert de « grain » irrégulier pour les voix de monstre */
+function rugosite(t, duree, vitesse, profondeur) {
+  const b = bruit(), f = filtre("lowpass", vitesse), g = gain(profondeur);
+  b.connect(f); f.connect(g); b.start(t); b.stop(t + duree);
+  return g;
+}
+/* formants d'une voyelle « aah » */
+function formants(source, dest, f1 = 800, f2 = 1200, f3 = 2700) {
+  [[f1, 6, 1], [f2, 8, 0.7], [f3, 10, 0.4]].forEach(([f, q, v]) => {
+    const b = filtre("bandpass", f, q), g = gain(v * 3);
+    source.connect(b); b.connect(g); g.connect(dest);
+  });
+}
+function coup(t, fort, freq = 70, dest = null) {           // impact sourd
+  const o = osc("sine", freq), g = gain();
+  o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 0.25);
+  o.connect(g); enveloppe(g.gain, t, 0.005, 0.03, 0.3, fort);
+  const b = bruit(), f = filtre("lowpass", 500), gb = gain();
+  b.connect(f); f.connect(gb); enveloppe(gb.gain, t, 0.002, 0.01, 0.12, fort * 0.6);
+  vers(g, 0.25); vers(gb, 0.25);
+  o.start(t); o.stop(t + 0.4); b.start(t); b.stop(t + 0.2);
+}
+
 const sons = {
+  /* coup de théâtre : boum grave + grappe de notes stridentes + souffle */
+  sursaut(t) {
+    coup(t, 2.2, 55);
+    const b = bruit(), fb = filtre("lowpass", 9000), gb = gain();
+    fb.frequency.setValueAtTime(9000, t); fb.frequency.exponentialRampToValueAtTime(150, t + 1.2);
+    b.connect(fb); fb.connect(gb); enveloppe(gb.gain, t, 0.005, 0.05, 1.2, 1.2);
+    vers(gb, 0.4); b.start(t); b.stop(t + 1.5);
+    const hp = filtre("highpass", 700), g = gain();
+    hp.connect(g); enveloppe(g.gain, t, 0.008, 0.25, 2.2, 0.5);
+    [1046, 1108, 1174, 1244, 1568, 1661].forEach((f) => {
+      const o = osc("sawtooth", f);
+      o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * 0.97, t + 2.4);
+      vibrato(o.frequency, 6 + Math.random() * 3, 12, t, t + 2.6);
+      const m = gain(0.15); o.connect(m); m.connect(hp); o.start(t); o.stop(t + 2.6);
+    });
+    vers(g, 0.6);
+  },
+
+  cri(t) {
+    const d = 2.4, dist = distorsion(2.5), g = gain();
+    const contour = courbeAleatoire(30, 1250, 1550);
+    [[1, 0.6], [1.015, 0.5], [0.5, 0.3]].forEach(([r, v]) => {
+      const o = osc("sawtooth", 500 * r);
+      o.frequency.setValueAtTime(450 * r, t);
+      o.frequency.exponentialRampToValueAtTime(1400 * r, t + 0.18);
+      o.frequency.setValueCurveAtTime(contour.map((x) => x * r), t + 0.2, 1.5);
+      o.frequency.exponentialRampToValueAtTime(500 * r, t + d);
+      vibrato(o.frequency, 8, 50 * r, t, t + d);
+      const m = gain(v); o.connect(m); m.connect(dist); o.start(t); o.stop(t + d + 0.05);
+    });
+    const souffle = bruit(), fs = filtre("bandpass", 3000, 1), gs = gain(0.35);
+    souffle.connect(fs); fs.connect(gs); gs.connect(dist); souffle.start(t); souffle.stop(t + d);
+    formants(dist, g, 950, 1400, 2900);
+    enveloppe(g.gain, t, 0.06, 1.6, 0.7, 0.9);
+    vers(g, 0.5);
+  },
+
+  /* rire grave et lent, « HA… HA… HA… » */
+  rire(t) {
+    const o = osc("sawtooth", 120), sub = osc("sine", 60), m = gain(0), g = gain(), dist = distorsion(1.8);
+    o.connect(dist); sub.connect(m); dist.connect(m);
+    const r = rugosite(t, 3.4, 40, 0.5), rg = gain(1); r.connect(rg.gain); m.connect(rg);
+    formants(rg, g, 650, 1050, 2400);
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const s = t + i * 0.32, h = 150 - i * 6;
+      o.frequency.setValueAtTime(h, s); o.frequency.exponentialRampToValueAtTime(h * 0.75, s + 0.25);
+      sub.frequency.setValueAtTime(h / 2, s);
+      m.gain.setValueAtTime(0, s); m.gain.linearRampToValueAtTime(1, s + 0.03); m.gain.linearRampToValueAtTime(0, s + 0.26);
+    }
+    g.gain.value = 0.9;
+    vers(g, 0.75); o.start(t); sub.start(t); o.stop(t + 3.4); sub.stop(t + 3.4);
+  },
+
+  monstre(t) {
+    const d = 3, o = osc("sawtooth", 70), sub = osc("sine", 40), dist = distorsion(3), g = gain(), f = filtre("lowpass", 1600);
+    o.frequency.setValueCurveAtTime(courbeAleatoire(30, 55, 100), t, d);
+    sub.frequency.setValueCurveAtTime(courbeAleatoire(20, 35, 50), t, d);
+    const rg = gain(0.5); rugosite(t, d, 70, 0.8).connect(rg.gain);
+    o.connect(rg); sub.connect(rg);
+    const b = bruit(), fb = filtre("bandpass", 600, 2), gb = gain(0.8);
+    fb.frequency.setValueCurveAtTime(courbeAleatoire(20, 350, 900), t, d);
+    b.connect(fb); fb.connect(gb); gb.connect(rg);
+    rg.connect(dist); dist.connect(f); f.connect(g);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1.6, t + 0.6);
+    g.gain.setValueAtTime(1.6, t + d - 0.8);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    vers(g, 0.45);
+    o.start(t); sub.start(t); b.start(t); o.stop(t + d); sub.stop(t + d); b.stop(t + d);
+  },
+
+  /* respiration lourde, tout près de l'oreille */
+  respiration(t) {
+    for (let i = 0; i < 4; i++) {
+      const s = t + i * 2.1;
+      [[0, 1.0, 1300, 0.5], [1.0, 1.0, 650, 0.8]].forEach(([dec, dur, f, v]) => {
+        const b = bruit(), bp = filtre("bandpass", f, 1.5), g = gain();
+        bp.frequency.setValueAtTime(f, s + dec); bp.frequency.linearRampToValueAtTime(f * 1.3, s + dec + dur);
+        b.connect(bp); bp.connect(g);
+        g.gain.setValueAtTime(0.0001, s + dec);
+        g.gain.linearRampToValueAtTime(v * 2, s + dec + dur * 0.4);
+        g.gain.exponentialRampToValueAtTime(0.0001, s + dec + dur);
+        vers(g, 0.05); b.start(s + dec); b.stop(s + dec + dur + 0.05);
+      });
+      const r = osc("sawtooth", 45), rg = gain();              // râle
+      r.connect(rg); enveloppe(rg.gain, s + 1.1, 0.2, 0.4, 0.3, 0.05);
+      vers(rg, 0.05); r.start(s + 1.1); r.stop(s + 2.1);
+    }
+  },
+
+  /* voix chuchotées incompréhensibles, à gauche et à droite */
+  chuchote(t) {
+    const voyelles = [[300, 2300], [700, 1200], [500, 1000], [400, 2000], [650, 1700], [350, 900]];
+    [-0.8, 0.8].forEach((cote, v) => {
+      const d = 4.5, b = bruit(), f1 = filtre("bandpass", 500, 7), f2 = filtre("bandpass", 1500, 9), g = gain(0);
+      b.connect(f1); b.connect(f2); f1.connect(g); f2.connect(g);
+      const debut = t + v * 0.35;
+      for (let s = debut; s < debut + d; s += 0.11 + Math.random() * 0.1) {
+        const [a, c] = voyelles[Math.floor(Math.random() * voyelles.length)];
+        f1.frequency.setTargetAtTime(a, s, 0.02); f2.frequency.setTargetAtTime(c, s, 0.02);
+        g.gain.setTargetAtTime(Math.random() < 0.25 ? 0 : 2.5 + Math.random() * 2, s, 0.03);
+      }
+      g.gain.setTargetAtTime(0, debut + d, 0.05);
+      const hs = filtre("highpass", 5000), gs = gain(0);
+      b.connect(hs); hs.connect(gs); gs.connect(g);                                   // sifflantes « sss »
+      for (let k = 0; k < 5; k++) { const x = debut + Math.random() * d; gs.gain.setTargetAtTime(0.6, x, 0.02); gs.gain.setTargetAtTime(0, x + 0.12, 0.03); }
+      let dest = g;
+      if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = cote; g.connect(p); dest = p; }
+      vers(dest, 0.35); b.start(debut); b.stop(debut + d + 0.3);
+    });
+  },
+
+  /* cordes qui crissent : glissandos aigus et dissonants */
+  cordes(t) {
+    const d = 3.2, hp = filtre("highpass", 1200), g = gain();
+    hp.connect(g);
+    for (let i = 0; i < 4; i++) {
+      const o = osc("sawtooth", 2000);
+      o.frequency.setValueCurveAtTime(courbeAleatoire(12, 1700 + i * 150, 2700 + i * 150), t, d);
+      vibrato(o.frequency, 6 + i, 35, t, t + d);
+      const m = gain(0.2); o.connect(m); m.connect(hp); o.start(t); o.stop(t + d);
+    }
+    for (let k = 0; k < 6; k++) {                                // coups d'archet
+      const s = t + k * 0.5;
+      g.gain.setValueAtTime(0.15, s); g.gain.linearRampToValueAtTime(0.9, s + 0.04); g.gain.linearRampToValueAtTime(0.35, s + 0.45);
+    }
+    g.gain.setValueAtTime(0.35, t + d - 0.25); g.gain.linearRampToValueAtTime(0, t + d);
+    vers(g, 0.55);
+  },
+
+  /* montée d'angoisse : grave dissonant qui enfle… puis coupure brutale et boum */
+  drone(t) {
+    const d = 6, f = filtre("lowpass", 150, 3), g = gain();
+    f.frequency.setValueAtTime(150, t); f.frequency.exponentialRampToValueAtTime(2500, t + d);
+    [55, 58.3, 82.4, 87.3, 110.5].forEach((n) => {
+      const o = osc("sawtooth", n); o.connect(f); o.start(t); o.stop(t + d);
+    });
+    const sif = osc("sine", 1800), gs = gain();                   // sifflement qui monte
+    sif.frequency.setValueAtTime(1800, t); sif.frequency.exponentialRampToValueAtTime(3600, t + d);
+    gs.gain.setValueAtTime(0.0001, t); gs.gain.exponentialRampToValueAtTime(0.08, t + d);
+    sif.connect(gs); gs.connect(g); sif.start(t); sif.stop(t + d);
+    f.connect(g);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5, t + d - 0.05);
+    g.gain.linearRampToValueAtTime(0, t + d);
+    vers(g, 0.3);
+    sons.sursaut(t + d + 0.05);                                   // … BOUM
+  },
+
+  coeur(t) {
+    let s = t;
+    for (let i = 0; i < 12; i++) {
+      for (const [dec, fort] of [[0, 1.6], [0.2, 1.1]]) {
+        const u = s + dec, o = osc("sine", 70), g = gain();
+        o.frequency.setValueAtTime(70, u); o.frequency.exponentialRampToValueAtTime(36, u + 0.14);
+        o.connect(g); enveloppe(g.gain, u, 0.01, 0.02, 0.16, fort * (0.6 + i * 0.05));
+        vers(g, 0.05); o.start(u); o.stop(u + 0.25);
+      }
+      s += 0.95 - i * 0.05; // le cœur s'accélère
+    }
+  },
+
+  porte(t) {
+    const d = 3.2, o = osc("sawtooth", 30), g = gain();
+    o.frequency.setValueCurveAtTime(courbeAleatoire(50, 12, 55), t, d);
+    const f1 = filtre("bandpass", 700, 10), f2 = filtre("bandpass", 1900, 14);
+    f1.frequency.setValueAtTime(550, t); f1.frequency.linearRampToValueAtTime(1100, t + d);
+    o.connect(f1); o.connect(f2); f1.connect(g); f2.connect(g);
+    enveloppe(g.gain, t, 0.3, d - 0.7, 0.4, 3.5);
+    vers(g, 0.3); o.start(t); o.stop(t + d + 0.1);
+    coup(t + d + 0.15, 2.4, 60);                                    // la porte claque
+  },
+
+  pas(t) {
+    for (let i = 0; i < 9; i++) coup(t + i * 0.7, 0.25 + i * 0.2, 80 - i * 2);
+  },
+
+  coups(t) {
+    const frappe = (s, fort) => {
+      const o = osc("sine", 190), g = gain();
+      o.frequency.setValueAtTime(190, s); o.frequency.exponentialRampToValueAtTime(110, s + 0.08);
+      o.connect(g); enveloppe(g.gain, s, 0.002, 0.01, 0.12, fort);
+      const b = bruit(), f = filtre("bandpass", 1000, 2), gb = gain();
+      b.connect(f); f.connect(gb); enveloppe(gb.gain, s, 0.001, 0.005, 0.04, fort * 0.8);
+      vers(g, 0.35); vers(gb, 0.35); o.start(s); o.stop(s + 0.2); b.start(s); b.stop(s + 0.08);
+    };
+    [0, 0.28, 0.56].forEach((d) => frappe(t + d, 1));
+    [2.2, 2.38, 2.56, 2.74, 2.92].forEach((d) => frappe(t + d, 1.8));
+  },
+
   loup(t) {
     const o = osc("sawtooth", 260), o2 = osc("sine", 260), f = filtre("lowpass", 1100, 2), g = gain();
     for (const x of [o, o2]) {
@@ -152,29 +371,7 @@ const sons = {
     enveloppe(g.gain, t, 0.5, 1.9, 1.1, 0.5);
     vers(g, 0.6); o.start(t); o2.start(t); o.stop(t + 3.6); o2.stop(t + 3.6);
   },
-  porte(t) {
-    const d = 2.6, o = osc("sawtooth", 40), g = gain();
-    o.frequency.setValueCurveAtTime(courbeAleatoire(40, 18, 70), t, d);
-    const f1 = filtre("bandpass", 900, 9), f2 = filtre("bandpass", 2300, 12);
-    f1.frequency.setValueAtTime(700, t); f1.frequency.linearRampToValueAtTime(1500, t + d);
-    o.connect(f1); o.connect(f2); f1.connect(g); f2.connect(g);
-    enveloppe(g.gain, t, 0.2, d - 0.6, 0.4, 3);
-    vers(g, 0.25); o.start(t); o.stop(t + d + 0.1);
-  },
-  rire(t) {
-    const o = osc("sawtooth", 850), g = gain(), f1 = filtre("bandpass", 900, 5), f2 = filtre("bandpass", 1400, 6), m = gain(0);
-    o.connect(f1); o.connect(f2); f1.connect(m); f2.connect(m); m.connect(g); g.gain.value = 1.4;
-    vibrato(o.frequency, 7, 25, t, t + 2.4);
-    for (let i = 0; i < 12; i++) {
-      const s = t + i * 0.17, haut = 1050 - i * 25;
-      o.frequency.setValueAtTime(haut, s);
-      o.frequency.exponentialRampToValueAtTime(haut * 0.8, s + 0.12);
-      m.gain.setValueAtTime(0, s);
-      m.gain.linearRampToValueAtTime(1, s + 0.02);
-      m.gain.linearRampToValueAtTime(0, s + 0.13);
-    }
-    vers(g, 0.4); o.start(t); o.stop(t + 2.4);
-  },
+
   tonnerre(t) {
     const b = bruit(), f = filtre("lowpass", 900), g = gain();
     f.frequency.setValueAtTime(3000, t); f.frequency.exponentialRampToValueAtTime(180, t + 1.5);
@@ -185,42 +382,7 @@ const sons = {
     g.gain.exponentialRampToValueAtTime(0.0001, t + 5.5);
     vers(g, 0.5); b.start(t); b.stop(t + 5.6);
   },
-  coeur(t) {
-    for (let i = 0; i < 7; i++) {
-      for (const [dec, fort] of [[0, 1.4], [0.24, 1]]) {
-        const s = t + i * 0.78 + dec, o = osc("sine", 75), g = gain();
-        o.frequency.setValueAtTime(75, s); o.frequency.exponentialRampToValueAtTime(38, s + 0.14);
-        o.connect(g); enveloppe(g.gain, s, 0.012, 0.02, 0.16, fort);
-        vers(g, 0.05); o.start(s); o.stop(s + 0.25);
-      }
-    }
-  },
-  fantome(t) {
-    const g = gain(), f = filtre("lowpass", 1400);
-    for (const dec of [0, 4]) {
-      const o = osc("sine", 380);
-      o.detune.value = dec;
-      o.frequency.setValueAtTime(330, t);
-      o.frequency.linearRampToValueAtTime(620, t + 1.4);
-      o.frequency.linearRampToValueAtTime(520, t + 2.4);
-      o.frequency.linearRampToValueAtTime(260, t + 4);
-      vibrato(o.frequency, 5.5, 14, t, t + 4.2);
-      o.connect(f); o.start(t); o.stop(t + 4.2);
-    }
-    f.connect(g); enveloppe(g.gain, t, 0.8, 2.2, 1.1, 0.35);
-    vers(g, 0.9);
-  },
-  cri(t) {
-    const o = osc("sawtooth", 700), d = distorsion(3), f1 = filtre("bandpass", 1100, 3), f2 = filtre("bandpass", 2600, 4), g = gain();
-    o.frequency.setValueAtTime(600, t);
-    o.frequency.exponentialRampToValueAtTime(1300, t + 0.25);
-    o.frequency.linearRampToValueAtTime(1150, t + 1.2);
-    o.frequency.exponentialRampToValueAtTime(450, t + 1.9);
-    vibrato(o.frequency, 9, 45, t, t + 2);
-    o.connect(d); d.connect(f1); d.connect(f2); f1.connect(g); f2.connect(g);
-    enveloppe(g.gain, t, 0.08, 1.2, 0.7, 1.1);
-    vers(g, 0.45); o.start(t); o.stop(t + 2.1);
-  },
+
   chaines(t) {
     for (let i = 0; i < 9; i++) {
       const s = t + i * 0.22 + Math.random() * 0.12;
@@ -234,62 +396,14 @@ const sons = {
       vers(g, 0.2); b.start(s); b.stop(s + 0.1);
     }
   },
-  glas(t) {
-    const rapports = [0.5, 1, 1.19, 1.5, 2, 2.74, 3, 4.1];
-    for (let n = 0; n < 3; n++) {
-      const s = t + n * 2.2;
-      rapports.forEach((r, i) => {
-        const o = osc("sine", 196 * r), g = gain();
-        o.connect(g); enveloppe(g.gain, s, 0.005, 0, 4.5 / (1 + i * 0.4), 0.22 / (1 + i * 0.3));
-        vers(g, 0.5); o.start(s); o.stop(s + 5);
-      });
-    }
-  },
-  vent(t) {
-    const d = 7, b = bruit(), f = filtre("bandpass", 600, 5), g = gain();
-    f.frequency.setValueCurveAtTime(courbeAleatoire(20, 300, 1300), t, d);
-    b.connect(f); f.connect(g);
-    enveloppe(g.gain, t, 1.5, d - 3, 1.5, 1.6);
-    vers(g, 0.4); b.start(t); b.stop(t + d + 0.1);
-  },
-  chauvesouris(t) {
-    for (let i = 0; i < 16; i++) {
-      const s = t + i * 0.09 + Math.random() * 0.12, o = osc("sine", 3800), g = gain();
-      o.frequency.setValueAtTime(3600 + Math.random() * 800, s);
-      o.frequency.exponentialRampToValueAtTime(1900, s + 0.045);
-      o.connect(g); enveloppe(g.gain, s, 0.005, 0.01, 0.03, 0.25);
-      let dest = g;
-      if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = Math.random() * 2 - 1; g.connect(p); dest = p; }
-      vers(dest, 0.3); o.start(s); o.stop(s + 0.08);
-    }
-  },
-  orgue(t) {
-    const notes = [73.4, 146.8, 174.6, 207.7, 246.9, 293.7]; // accord diminué sinistre
-    const f = filtre("lowpass", 2200), g = gain();
-    for (const n of notes) for (const type of ["sawtooth", "square"]) {
-      const o = osc(type, n); o.detune.value = Math.random() * 8 - 4;
-      const m = gain(type === "square" ? 0.05 : 0.08); o.connect(m); m.connect(f);
-      o.start(t); o.stop(t + 4.4);
-    }
-    f.connect(g); enveloppe(g.gain, t, 0.15, 2.8, 1.3, 0.9);
-    vers(g, 0.7);
-  },
-  grogne(t) {
-    const d = 2.2, o = osc("sawtooth", 75), f = filtre("bandpass", 450, 3), g = gain(), rugueux = gain(0.6);
-    o.frequency.setValueCurveAtTime(courbeAleatoire(30, 55, 105), t, d);
-    const b = bruit(), fb = filtre("lowpass", 60), gb = gain(0.9);
-    b.connect(fb); fb.connect(gb); gb.connect(rugueux.gain); // grain irrégulier
-    o.connect(rugueux); rugueux.connect(f); f.connect(g);
-    enveloppe(g.gain, t, 0.25, d - 0.8, 0.5, 2.2);
-    vers(g, 0.3); o.start(t); o.stop(t + d + 0.1); b.start(t); b.stop(t + d + 0.1);
-  },
 };
 
 const pad = [
-  ["loup", "🐺", "Loup"], ["rire", "🧙‍♀️", "Sorcière"], ["cri", "😱", "Cri"],
-  ["porte", "🚪", "Porte"], ["tonnerre", "⛈️", "Tonnerre"], ["coeur", "💓", "Cœur"],
-  ["fantome", "👻", "Fantôme"], ["chaines", "⛓️", "Chaînes"], ["glas", "🔔", "Glas"],
-  ["vent", "🌬️", "Vent"], ["chauvesouris", "🦇", "Chauves-souris"], ["grogne", "🧟", "Zombie"],
+  ["sursaut", "⚡", "Sursaut"], ["cri", "😱", "Cri"], ["rire", "😈", "Rire du diable"],
+  ["monstre", "👹", "Monstre"], ["respiration", "😮‍💨", "Souffle"], ["chuchote", "🤫", "Chuchotements"],
+  ["cordes", "🎻", "Cordes"], ["drone", "🌑", "Angoisse"], ["coeur", "💓", "Cœur"],
+  ["porte", "🚪", "Porte"], ["pas", "👣", "Pas"], ["coups", "✊", "On frappe"],
+  ["loup", "🐺", "Loup"], ["tonnerre", "⛈️", "Tonnerre"], ["chaines", "⛓️", "Chaînes"],
 ];
 
 const grille = document.getElementById("pad");
@@ -366,24 +480,28 @@ async function demarrerMicro() {
     return;
   }
   const src = ctx.createMediaStreamSource(flux);
-  const coupeBas = filtre("highpass", 90);
-  const decaleur = decaleurHauteur(-0.8);              // voix nettement plus grave
-  const grave = filtre("lowshelf", 220); grave.gain.value = 8;
-  const dist = distorsion(2.5);
-  const doux = filtre("lowpass", 3200);
+  const coupeBas = filtre("highpass", 110);
+  // compresseur doux : égalise le volume sans saturer
+  const egaliseur = ctx.createDynamicsCompressor();
+  egaliseur.threshold.value = -28; egaliseur.knee.value = 12; egaliseur.ratio.value = 4;
+  egaliseur.attack.value = 0.005; egaliseur.release.value = 0.2;
+  const decaleur = decaleurHauteur(-0.6);              // voix plus grave (≈ -6 demi-tons) mais compréhensible
+  const grave = filtre("lowshelf", 200); grave.gain.value = 4;
+  const clarte = filtre("peaking", 2500, 1); clarte.gain.value = 4;   // garde les consonnes audibles
+  const doux = filtre("lowpass", 6500);
   const voix = gain(0);
-  const envoiReverb = gain(0.25);
+  const envoiReverb = gain(0.12);
   const analyse = ctx.createAnalyser(); analyse.fftSize = 512;
 
-  src.connect(coupeBas); coupeBas.connect(analyse); coupeBas.connect(decaleur.entree);
-  decaleur.sortie.connect(grave); grave.connect(dist); dist.connect(doux); doux.connect(voix);
+  src.connect(coupeBas); coupeBas.connect(analyse); coupeBas.connect(egaliseur); egaliseur.connect(decaleur.entree);
+  decaleur.sortie.connect(grave); grave.connect(clarte); clarte.connect(doux); doux.connect(voix);
   voix.connect(sortie); voix.connect(envoiReverb); envoiReverb.connect(reverb);
-  voix.gain.setTargetAtTime(1.3, ctx.currentTime, 0.05);
+  voix.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
 
   let verrou = null;
   try { verrou = await navigator.wakeLock.request("screen"); } catch (e) {}
 
-  micro = { flux, decaleur, voix, noeuds: [src, coupeBas, grave, dist, doux, voix, envoiReverb, analyse], verrou };
+  micro = { flux, decaleur, voix, noeuds: [src, coupeBas, egaliseur, grave, clarte, doux, voix, envoiReverb, analyse], verrou };
   boutonMicro.classList.add("actif");
   boutonMicro.setAttribute("aria-pressed", "true");
   texteMicro.textContent = "Voix de monstre : MARCHE";
@@ -412,6 +530,11 @@ function arreterMicro() {
   boutonMicro.setAttribute("aria-pressed", "false");
   texteMicro.textContent = "Voix de monstre : ARRÊT";
   message.textContent = "";
+}
+
+/* ===================== Mode application ===================== */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 </script>
 </body>

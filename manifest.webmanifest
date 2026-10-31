@@ -1,0 +1,17 @@
+{
+  "name": "Monstre Box – Halloween",
+  "short_name": "Monstre Box",
+  "description": "Pad de bruitages d'Halloween et voix de monstre au micro.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#120a1c",
+  "theme_color": "#120a1c",
+  "icons": [
+    { "src": "icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
